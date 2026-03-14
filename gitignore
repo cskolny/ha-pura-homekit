@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+*.zip
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Home Assistant dev artefacts
+config/
+.devcontainer/
+
+# IDE
+.idea/
+*.swp
+deploy.sh
+.DS_Store
+Thumbs.db
