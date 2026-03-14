@@ -1,86 +1,116 @@
-# ha-pura-homekit
+# Pura HomeKit Bridge — Home Assistant Custom Integration
 
-[![Release](https://img.shields.io/github/v/release/yourusername/ha-pura-homekit?style=for-the-badge)](https://github.com/yourusername/ha-pura-homekit/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/yourusername/ha-pura-homekit/ci.yml?style=for-the-badge&label=CI)](https://github.com/yourusername/ha-pura-homekit/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-blue?logo=homeassistant)](https://www.home-assistant.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
+[![Release](https://img.shields.io/github/v/release/cskolny/ha-pura-homekit)](https://github.com/cskolny/ha-pura-homekit/releases)
 
-**Standalone** Home Assistant custom integration that bridges [Pura 4](https://pura.com) smart fragrance diffusers directly into **Apple HomeKit** as humidifier and light accessories.
+Control your **Pura 4 smart fragrance diffusers** from Apple HomeKit — no third-party integrations, no HACS dependencies. Each diffuser appears as a **Humidifier** accessory with intensity mapped to humidity percentage, and the device nightlight appears as a **Light** accessory with full brightness and colour control.
 
-> **No dependency on ha-pura or any other HACS integration.** This project owns the complete stack from Pura cloud API authentication all the way to the HomeKit accessory — giving you full end-to-end control.
+## How It Works
+
+```
+Apple Home App
+      │  HAP (HomeKit Accessory Protocol)
+      ▼
+HomeKit Bridge  (HA built-in integration)
+      │  HA humidifier / light service calls
+      ▼
+pura_homekit  (this integration)
+  ├── coordinator.py   polls Pura cloud API every 30s
+  ├── pura_api.py      authenticates via AWS Cognito + GraphQL
+  ├── humidifier.py    intensity → humidity % entity
+  └── light.py         nightlight on/off, brightness, RGB entity
+      │  HTTPS / GraphQL
+      ▼
+Pura Cloud API  (api.pura.com)
+      │  WiFi
+      ▼
+Pura 4 Diffuser
+```
+
+Authentication uses your Pura email and password — the same credentials you use in the Pura mobile app. Tokens are refreshed automatically; your password is stored encrypted by Home Assistant and never sent anywhere except Pura's own AWS Cognito service.
+
+**Intensity → Humidity mapping:**
+
+| Pura Level | HomeKit Humidity % | HA Mode  |
+|-----------|---------------------|----------|
+| Off       | 0 %                 | —        |
+| Subtle    | 33 %                | subtle   |
+| Medium    | 66 %                | medium   |
+| Strong    | 100 %               | strong   |
+
+The HomeKit humidity slider snaps to the nearest defined step — so dragging to any value always lands cleanly on off, subtle, medium, or strong.
 
 ---
 
 ## Features
 
-| Feature | Details |
-|---------|---------|
-| **Humidifier accessory** | On/Off + intensity via HomeKit humidity % |
-| **Intensity mapping** | off → 0 %, subtle → 33 %, medium → 66 %, strong → 100 % |
-| **Fragrance modes** | subtle / medium / strong available as HA humidifier modes |
-| **Nightlight accessory** | On/Off, brightness (1-10), and full RGB colour |
-| **Polling** | 30-second cloud poll with 1-second optimistic UI update |
-| **Multi-device** | One config entry per diffuser; three entries for three Pura 4 units |
-| **ESPHome ready** | Client layer is isolated so a local ESPHome client can be swapped in |
+- 🌿 **Humidifier accessory** — on/off and intensity control via HomeKit humidity slider
+- 💡 **Nightlight accessory** — on/off, brightness, and full RGB colour control
+- 🔑 **Direct Pura API** — no ha-pura or any other dependency; owns the full auth stack
+- 🔄 **30-second polling** with 1-second optimistic UI updates after every command
+- ↩️ **Intensity memory** — turning a diffuser back on restores the last-used intensity
+- ⚙️ **Full config flow** — set up entirely from the HA UI, no `configuration.yaml` changes
+- 🔒 **Encrypted credential storage** — passwords stored by HA's built-in config entry store
+- 🛣️ **ESPHome migration path** — API client layer is isolated; swap in a local client when ready
+- 🚀 **`deploy.sh`** — one-command deployment to your Raspberry Pi
 
 ---
 
-## How HomeKit Sees It
+## Requirements
 
-```
-Apple Home App
-├── Living Room Diffuser      (Humidifier)
-│     └── Humidity slider: 0 % / 33 % / 66 % / 100 %
-└── Living Room Diffuser Nightlight  (Light)
-      ├── On / Off
-      ├── Brightness
-      └── Color
-```
+- Home Assistant running in Docker (Container install) **2026.3 or later**
+- HomeKit Bridge integration enabled in Home Assistant
+- A Pura account with **email + password** login
 
----
-
-## Prerequisites
-
-1. **Home Assistant** (Container or any install) **2026.3.1** or later
-2. **HomeKit Bridge** integration enabled in Home Assistant
-3. A **Pura account** with email + password login  
-   *(If you registered via Apple/Google/Facebook you must set a password in the Pura app first — see Troubleshooting below)*
+> **Social login note:** If you registered with Apple, Google, or Facebook you must set a password before using this integration. Open the Pura app → Settings → sign out → "Sign into your account" → "Forgot your password?" and follow the steps.
 
 ---
 
 ## Installation
 
-### Manual (recommended for development)
+### Manual
 
-```bash
-# On your Mac — from the project root
-rsync -avz --delete \
-  custom_components/pura_homekit/ \
-  pi@raspberrypi.local:/path/to/homeassistant/config/custom_components/pura_homekit/
+1. Copy the `custom_components/pura_homekit/` folder into your HA config directory:
+   ```
+   config/
+   └── custom_components/
+       └── pura_homekit/
+           ├── __init__.py
+           ├── coordinator.py
+           ├── pura_api.py
+           ├── entity.py
+           ├── humidifier.py
+           ├── light.py
+           ├── config_flow.py
+           ├── const.py
+           ├── manifest.json
+           ├── strings.json
+           └── translations/
+               └── en.json
+   ```
 
-# Restart HA
-ssh pi@raspberrypi.local "docker restart homeassistant"
-```
+2. Restart Home Assistant.
 
-### HACS (once published)
+3. Go to **Settings → Devices & Services → Add Integration → Pura HomeKit Bridge**
 
-1. HACS → Integrations → ⋮ → **Custom repositories**
-2. Add `https://github.com/yourusername/ha-pura-homekit` — type **Integration**
-3. Install **Pura HomeKit Bridge**
-4. Restart Home Assistant
+4. Enter your Pura email and password — the integration validates them immediately.
+
+5. Select the diffuser to add. Repeat for each additional diffuser (each gets its own config entry).
+
+### HACS (Custom repository)
+
+1. In HACS → Integrations → three-dot menu → **Custom repositories**
+2. Add `https://github.com/cskolny/ha-pura-homekit` with category **Integration**
+3. Search for "Pura HomeKit Bridge" and install
+4. Restart Home Assistant, then follow steps 3–5 above
 
 ---
 
-## Configuration
+## HomeKit Bridge Setup
 
-1. **Settings → Devices & Services → Add Integration**
-2. Search for **Pura HomeKit Bridge**
-3. Enter your Pura email and password — the integration validates them immediately
-4. Select the diffuser to add
-5. Repeat for each additional diffuser (each gets its own config entry)
-
-### HomeKit Bridge
-
-After the integration is set up, include the new entities in HomeKit Bridge.
+After the integration is configured, include the new entities in HomeKit Bridge so they appear in the Apple Home app.
 
 **Option A — filter in `configuration.yaml`:**
 ```yaml
@@ -91,65 +121,50 @@ homekit:
       - light.pura_*
 ```
 
-**Option B — add via UI:**  
+**Option B — add via UI:**
 Settings → Devices & Services → HomeKit Bridge → Configure → Manage Entities
 
-Scan the QR code in Apple Home to add the bridge. Your diffusers will appear as **Humidifier** and **Light** accessories.
+Scan the QR code shown in the HomeKit Bridge integration card to pair with the Apple Home app. Each configured diffuser will appear as a **Humidifier** accessory and a separate **Nightlight** light accessory.
 
 ---
 
-## Entity Reference
+## Usage
 
-For each configured Pura 4 diffuser this integration creates:
+Once set up, each Pura 4 appears in HomeKit with two accessories:
 
-| Entity ID | Domain | Description |
-|-----------|--------|-------------|
-| `humidifier.pura_<device_name>` | `humidifier` | Diffuser on/off + intensity |
-| `light.pura_<device_name>_nightlight` | `light` | Device LED on/off, brightness, RGB |
+| Accessory | Type | Controls |
+|-----------|------|----------|
+| `Living Room Diffuser` | Humidifier | On/Off, humidity slider (0 / 33 / 66 / 100 %) |
+| `Living Room Diffuser Nightlight` | Light | On/Off, brightness, colour |
 
----
+### Automations
 
-## Intensity ↔ Humidity Mapping
-
-| Pura Level | Raw Intensity | HomeKit Humidity % | HA Mode |
-|-----------|---------------|--------------------|---------|
-| Off       | 0             | 0 %                | —       |
-| Subtle    | 2             | 33 %               | subtle  |
-| Medium    | 5             | 66 %               | medium  |
-| Strong    | 8             | 100 %              | strong  |
-
-The raw intensity sent to the Pura API (`2`, `5`, `8`) matches the midpoint of each Pura intensity band.  All values in `const.py` so they're easy to adjust.
-
-The HomeKit humidity slider can land on any value 0-100.  The integration snaps it to the nearest defined step (e.g. `50` → `medium`).
-
----
-
-## Automations
+Standard HA service calls work on both entity types:
 
 ```yaml
 # Turn on at medium intensity
 service: humidifier.set_humidity
 target:
-  entity_id: humidifier.living_room
+  entity_id: humidifier.living_room_diffuser
 data:
   humidity: 66
 
 # Turn on at strong via named mode
 service: humidifier.set_mode
 target:
-  entity_id: humidifier.living_room
+  entity_id: humidifier.living_room_diffuser
 data:
   mode: strong
 
 # Turn off
 service: humidifier.turn_off
 target:
-  entity_id: humidifier.living_room
+  entity_id: humidifier.living_room_diffuser
 
-# Set nightlight to warm amber
+# Set nightlight to warm amber at 60% brightness
 service: light.turn_on
 target:
-  entity_id: light.living_room_nightlight
+  entity_id: light.living_room_diffuser_nightlight
 data:
   brightness_pct: 60
   color_name: orange
@@ -157,94 +172,44 @@ data:
 
 ---
 
-## Architecture
+## Entities
 
-```
-Apple Home App
-      │  HAP (HomeKit Accessory Protocol)
-      ▼
-HomeKit Bridge (HA built-in)
-      │  HA humidifier / light service calls
-      ▼
-pura_homekit  (this integration)
-  ├── __init__.py        – entry setup / teardown
-  ├── coordinator.py     – DataUpdateCoordinator, owns the API client
-  ├── pura_api.py        – PuraApiClient: Cognito auth + GraphQL calls
-  ├── entity.py          – PuraEntity base (CoordinatorEntity)
-  ├── humidifier.py      – PuraHumidifierEntity
-  └── light.py           – PuraNightlightEntity
-      │  HTTPS / GraphQL
-      ▼
-Pura Cloud API (api.pura.com/graphql)
-      │  WiFi / MQTT
-      ▼
-Pura 4 Diffuser
-```
+For each configured Pura 4 diffuser this integration creates two entities:
 
-### ESPHome Migration
+| Entity ID | Domain | Description |
+|-----------|--------|-------------|
+| `humidifier.pura_<name>` | `humidifier` | Diffuser on/off + intensity |
+| `light.pura_<name>_nightlight` | `light` | Nightlight on/off, brightness, RGB |
 
-The `PuraApiClient` in `pura_api.py` is the only cloud-touching class.  When you flash your Pura 4 devices with ESPHome:
-
-1. Create `esphome_client.py` with the same interface (`async_get_devices`, `async_set_all_bays_intensity`, `async_set_nightlight`)
-2. In `coordinator.py`, replace the `PuraApiClient` import with your new client
-3. Update `config_flow.py` to collect the local IP / hostname instead of Pura credentials
-4. The entities, coordinator logic, and HomeKit mapping remain unchanged
+> The nightlight entity is skipped automatically on any device that does not report nightlight hardware in the Pura API response.
 
 ---
 
-## Development
+## Deploying to Raspberry Pi
 
-### Local Setup
-
-```bash
-git clone https://github.com/yourusername/ha-pura-homekit
-cd ha-pura-homekit
-python -m venv .venv
-source .venv/bin/activate
-pip install homeassistant ruff mypy pytest pytest-asyncio
-```
-
-### Lint, Type-check, Test
+The `deploy.sh` script in the repository root rsyncs the integration to your Pi and optionally restarts Home Assistant in one command:
 
 ```bash
-ruff check custom_components/
-mypy custom_components/pura_homekit --ignore-missing-imports
-pytest tests/ -v
+# Full deploy + HA restart
+./deploy.sh
+
+# Deploy files only — restart manually later
+./deploy.sh --skip-restart
 ```
 
-### Deploy to Raspberry Pi
-
-```bash
-rsync -avz --delete \
-  custom_components/pura_homekit/ \
-  pi@raspberrypi.local:/path/to/homeassistant/config/custom_components/pura_homekit/
-
-ssh pi@raspberrypi.local "docker restart homeassistant"
-```
-
-### Releasing
-
-```bash
-# 1. Bump version in manifest.json
-# 2. Commit + push to main
-git tag v1.0.0
-git push origin v1.0.0
-# GitHub Actions builds pura_homekit.zip and publishes the release automatically
-```
+The script stamps `manifest.json` with the current git SHA on every deploy, which prevents Home Assistant from serving a stale cached version of the integration during development.
 
 ---
 
-## Troubleshooting
+## Log Files
 
-| Symptom | Fix |
-|---------|-----|
-| "Invalid email or password" | If you registered with Apple/Google/Facebook, you must set a password: open the Pura app → Settings → sign out → "Sign into your account" → "Forgot your password?" |
-| "Cannot connect" | Check internet connectivity; verify the Pura app works on the same network |
-| Device shows unavailable | The Pura device is offline or out of WiFi range; check the Pura app |
-| HomeKit shows wrong intensity | The raw intensity integers in `const.py` may differ from your firmware version — check HA state attributes after a manual change in the Pura app |
-| Nightlight entity missing | Some older Pura models lack nightlight hardware; the entity is skipped when `nightlight` is absent from the API response |
+| Location | Contents |
+|----------|----------|
+| HA logs (`Settings → System → Logs`) | API polling results, command errors, token refresh events |
+| Debug logs (see below) | Full GraphQL request/response detail |
 
-**Enable debug logging:**
+Enable debug logging for detailed output:
+
 ```yaml
 # configuration.yaml
 logger:
@@ -254,12 +219,37 @@ logger:
 
 ---
 
-## License
+## Troubleshooting
 
-MIT — see [LICENSE](LICENSE)
+**"Invalid email or password" at setup**
+- Verify credentials in the Pura mobile app.
+- If you registered with Apple/Google/Facebook, you must set a password first — see the social login note in Requirements above.
+
+**Device shows unavailable in HA or HomeKit**
+- The Pura device is offline or out of WiFi range. Check the Pura app.
+- If all three devices go unavailable simultaneously, the Pura cloud API may be down.
+
+**Intensity not changing after a command**
+- Check HA logs for API errors (`Settings → System → Logs`).
+- Enable debug logging (see above) for full detail.
+
+**Nightlight entity missing**
+- Your device does not report nightlight hardware in the API response. The entity is intentionally skipped.
+
+**HomeKit shows stale state**
+- The integration polls every 30 seconds. Wait one poll cycle or trigger a manual refresh via Developer Tools → States.
 
 ---
 
-## Credits
+## Complementary Projects
 
-Pura API protocol research: [natekspencer/pypura](https://github.com/natekspencer/pypura) and [homebridge-plugins/homebridge-pura](https://github.com/homebridge-plugins/homebridge-pura)
+This integration is part of a suite of Home Assistant custom components sharing the same code style, coordinator pattern, and config-flow structure:
+
+- **[HA Docker Updater](https://github.com/cskolny/ha-docker-updater)** — update your HA Docker container from the HA UI
+- **[Green Button Energy Import](https://github.com/cskolny/ha-green-button-energy)** — import utility energy data from Green Button CSV files
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
