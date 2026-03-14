@@ -15,8 +15,8 @@ PURA_COGNITO_REGION = "us-east-1"
 PURA_USER_POOL_ID = "us-east-1_LaB718hYv"
 PURA_CLIENT_ID = "4iekubat0jb5iljfbaalsiqf9j"
 
-# Pura REST/GraphQL endpoint
-PURA_API_URL = "https://api.pura.com/graphql"
+# Pura REST API base URL (trailing slash required for urljoin-style path appending)
+PURA_API_URL = "https://trypura.io/mobile/api/"
 
 # How often to poll the Pura API (seconds)
 DEFAULT_SCAN_INTERVAL = 30

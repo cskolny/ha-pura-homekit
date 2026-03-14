@@ -4,33 +4,90 @@
 # Syncs the custom component into the HA config volume and optionally
 # restarts the Home Assistant container so the integration reloads.
 #
+# Two environments are supported — select with --env:
+#   production (default)  → container: homeassistant      config: ./config       port: 8123
+#   test                  → container: homeassistant_test  config: ./config_test  port: 8124
+#
 # Usage:
-#   ./deploy.sh                   # full deploy + HA restart
-#   ./deploy.sh --skip-restart    # deploy files without restarting HA
+#   ./deploy.sh                          # deploy to production + restart
+#   ./deploy.sh --env test               # deploy to test + restart
+#   ./deploy.sh --env production         # deploy to production + restart (explicit)
+#   ./deploy.sh --env test --skip-restart  # deploy to test, no restart
 
 set -euo pipefail   # exit on error, treat unset vars as errors, fail on pipe errors
 
+# ── Constants ─────────────────────────────────────────────────────────────────
 PI="pi@homeassistant.local"
-HA_CONFIG="/home/pi/homeassistant/config"
+COMPOSE_DIR="/home/pi/homeassistant"
 COMPONENT_NAME="pura_homekit"
 COMPONENT_SRC="custom_components/${COMPONENT_NAME}"
-COMPONENT_DEST="${HA_CONFIG}/custom_components/${COMPONENT_NAME}"
+
+# ── Defaults ──────────────────────────────────────────────────────────────────
+ENV="production"
 SKIP_RESTART=false
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
-for arg in "$@"; do
-  case $arg in
-    --skip-restart) SKIP_RESTART=true ;;
-    *) echo "Unknown argument: $arg"; exit 1 ;;
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --env)
+      if [[ -z "${2:-}" ]]; then
+        echo "❌ --env requires a value: production or test"
+        exit 1
+      fi
+      ENV="$2"
+      shift 2
+      ;;
+    --skip-restart)
+      SKIP_RESTART=true
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: ./deploy.sh [--env production|test] [--skip-restart]"
+      echo ""
+      echo "  --env production   Deploy to homeassistant container   (port 8123)  [default]"
+      echo "  --env test         Deploy to homeassistant_test container (port 8124)"
+      echo "  --skip-restart     Sync files without restarting the container"
+      exit 0
+      ;;
+    *)
+      echo "❌ Unknown argument: $1"
+      echo "   Run ./deploy.sh --help for usage."
+      exit 1
+      ;;
   esac
 done
+
+# ── Resolve environment-specific values ───────────────────────────────────────
+case "$ENV" in
+  production)
+    HA_CONFIG="${COMPOSE_DIR}/config"
+    CONTAINER_NAME="homeassistant"
+    HA_PORT="8123"
+    ;;
+  test)
+    HA_CONFIG="${COMPOSE_DIR}/config_test"
+    CONTAINER_NAME="homeassistant_test"
+    HA_PORT="8124"
+    ;;
+  *)
+    echo "❌ Unknown environment: '$ENV'  (valid values: production, test)"
+    exit 1
+    ;;
+esac
+
+COMPONENT_DEST="${HA_CONFIG}/custom_components/${COMPONENT_NAME}"
 
 # ── Git info (best-effort) ─────────────────────────────────────────────────────
 GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 GIT_DIRTY=$(git status --porcelain 2>/dev/null | grep -q . && echo " (uncommitted changes)" || echo "")
+
 echo "🚀 Deploying ha-pura-homekit @ ${GIT_SHA}${GIT_DIRTY}"
-echo "   Target : $PI"
-echo "   Restart: $([ "$SKIP_RESTART" = true ] && echo 'no (--skip-restart)' || echo 'yes')"
+echo "   Target    : $PI"
+echo "   Env       : ${ENV}"
+echo "   Container : ${CONTAINER_NAME}"
+echo "   Config    : ${HA_CONFIG}"
+echo "   Port      : ${HA_PORT}"
+echo "   Restart   : $([ "$SKIP_RESTART" = true ] && echo 'no (--skip-restart)' || echo 'yes')"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 1 — HA Custom Component
@@ -101,8 +158,8 @@ if [ "$SKIP_RESTART" = false ]; then
   echo "│  Restarting Home Assistant                      │"
   echo "└─────────────────────────────────────────────────┘"
   echo ""
-  echo "🔄 Restarting Home Assistant container..."
-  ssh "$PI" "cd /home/pi/homeassistant && docker compose restart homeassistant"
+  echo "🔄 Restarting ${CONTAINER_NAME} container..."
+  ssh "$PI" "cd '${COMPOSE_DIR}' && docker compose restart ${CONTAINER_NAME}"
 
   echo ""
   echo "⏳ Waiting for HA to come back online (up to 120s)..."
@@ -112,7 +169,7 @@ if [ "$SKIP_RESTART" = false ]; then
   for i in $(seq 1 60); do
     sleep 2
     HTTP_CODE=$(ssh "$PI" \
-      "curl -s -o /dev/null -w '%{http_code}' http://localhost:8123/" \
+      "curl -s -o /dev/null -w '%{http_code}' http://localhost:${HA_PORT}/" \
       2>/dev/null || echo "000")
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
       echo "✅ Home Assistant is back online (${i}s × 2s, HTTP ${HTTP_CODE})."
@@ -120,13 +177,13 @@ if [ "$SKIP_RESTART" = false ]; then
     fi
     if [ "$i" -eq 60 ]; then
       echo "⚠️  HA did not respond after 120s — check logs on the Pi:"
-      echo "     ssh $PI 'cd /home/pi/homeassistant && docker compose logs --tail=50 homeassistant'"
+      echo "     ssh $PI 'cd ${COMPOSE_DIR} && docker compose logs --tail=50 ${CONTAINER_NAME}'"
     fi
   done
 else
   echo ""
   echo "⏭️  Skipping HA restart (--skip-restart flag set)."
-  echo "   Run manually: ssh $PI 'cd /home/pi/homeassistant && docker compose restart homeassistant'"
+  echo "   Run manually: ssh $PI 'cd ${COMPOSE_DIR} && docker compose restart ${CONTAINER_NAME}'"
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -135,10 +192,12 @@ fi
 echo ""
 echo "✅ Deploy complete!"
 echo "   Commit    : ${GIT_SHA}${GIT_DIRTY}"
+echo "   Env       : ${ENV}"
 echo "   Component : ${COMPONENT_DEST}"
 echo "   Version   : ${MANIFEST_VERSION}"
 echo ""
 echo "   Useful commands on the Pi:"
-echo "     HA logs      : ssh $PI 'cd /home/pi/homeassistant && docker compose logs -f homeassistant'"
-echo "     HA errors    : ssh $PI 'cd /home/pi/homeassistant && docker compose logs homeassistant 2>&1 | grep -i pura'"
-echo "     Restart HA   : ssh $PI 'cd /home/pi/homeassistant && docker compose restart homeassistant'"
+echo "     HA logs    : ssh $PI 'cd ${COMPOSE_DIR} && docker compose logs -f ${CONTAINER_NAME}'"
+echo "     HA errors  : ssh $PI 'cd ${COMPOSE_DIR} && docker compose logs ${CONTAINER_NAME} 2>&1 | grep -i pura'"
+echo "     Restart    : ssh $PI 'cd ${COMPOSE_DIR} && docker compose restart ${CONTAINER_NAME}'"
+echo "     Open HA    : http://homeassistant.local:${HA_PORT}"

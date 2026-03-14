@@ -18,12 +18,12 @@ HomeKit Bridge  (HA built-in integration)
       ▼
 pura_homekit  (this integration)
   ├── coordinator.py   polls Pura cloud API every 30s
-  ├── pura_api.py      authenticates via AWS Cognito + GraphQL
+  ├── pura_api.py      authenticates via AWS Cognito SRP + REST API
   ├── humidifier.py    intensity → humidity % entity
   └── light.py         nightlight on/off, brightness, RGB entity
-      │  HTTPS / GraphQL
+      │  HTTPS REST
       ▼
-Pura Cloud API  (api.pura.com)
+Pura Cloud API  (trypura.io)
       │  WiFi
       ▼
 Pura 4 Diffuser
@@ -54,7 +54,7 @@ The HomeKit humidity slider snaps to the nearest defined step — so dragging to
 - ⚙️ **Full config flow** — set up entirely from the HA UI, no `configuration.yaml` changes
 - 🔒 **Encrypted credential storage** — passwords stored by HA's built-in config entry store
 - 🛣️ **ESPHome migration path** — API client layer is isolated; swap in a local client when ready
-- 🚀 **`deploy.sh`** — one-command deployment to your Raspberry Pi
+- 🚀 **`deploy.sh`** — one-command deployment to production or test environment on Raspberry Pi
 
 ---
 
@@ -178,8 +178,8 @@ For each configured Pura 4 diffuser this integration creates two entities:
 
 | Entity ID | Domain | Description |
 |-----------|--------|-------------|
-| `humidifier.pura_<name>` | `humidifier` | Diffuser on/off + intensity |
-| `light.pura_<name>_nightlight` | `light` | Nightlight on/off, brightness, RGB |
+| `humidifier.pura_<n>` | `humidifier` | Diffuser on/off + intensity |
+| `light.pura_<n>_nightlight` | `light` | Nightlight on/off, brightness, RGB |
 
 > The nightlight entity is skipped automatically on any device that does not report nightlight hardware in the Pura API response.
 
@@ -187,15 +187,23 @@ For each configured Pura 4 diffuser this integration creates two entities:
 
 ## Deploying to Raspberry Pi
 
-The `deploy.sh` script in the repository root rsyncs the integration to your Pi and optionally restarts Home Assistant in one command:
+The `deploy.sh` script in the repository root rsyncs the integration to your Pi and optionally restarts Home Assistant in one command. Two environments are supported:
 
 ```bash
-# Full deploy + HA restart
+# Deploy to production + restart
 ./deploy.sh
 
-# Deploy files only — restart manually later
-./deploy.sh --skip-restart
+# Deploy to test environment + restart
+./deploy.sh --env test
+
+# Deploy without restarting
+./deploy.sh --env test --skip-restart
 ```
+
+| Flag | Container | Config | Port |
+|------|-----------|--------|------|
+| (default) | `homeassistant` | `./config` | 8123 |
+| `--env test` | `homeassistant_test` | `./config_test` | 8124 |
 
 The script stamps `manifest.json` with the current git SHA on every deploy, which prevents Home Assistant from serving a stale cached version of the integration during development.
 
@@ -206,7 +214,7 @@ The script stamps `manifest.json` with the current git SHA on every deploy, whic
 | Location | Contents |
 |----------|----------|
 | HA logs (`Settings → System → Logs`) | API polling results, command errors, token refresh events |
-| Debug logs (see below) | Full GraphQL request/response detail |
+| Debug logs (see below) | Full REST request/response detail |
 
 Enable debug logging for detailed output:
 
@@ -229,6 +237,9 @@ logger:
 - The Pura device is offline or out of WiFi range. Check the Pura app.
 - If all three devices go unavailable simultaneously, the Pura cloud API may be down.
 
+**Device shows incorrect on/off state**
+- Restart Home Assistant to force a fresh poll. The integration reads live state from `deviceDefaults.bay` in the Pura API response — `0` = off, `1`/`2` = bay active.
+
 **Intensity not changing after a command**
 - Check HA logs for API errors (`Settings → System → Logs`).
 - Enable debug logging (see above) for full detail.
@@ -238,6 +249,12 @@ logger:
 
 **HomeKit shows stale state**
 - The integration polls every 30 seconds. Wait one poll cycle or trigger a manual refresh via Developer Tools → States.
+
+---
+
+## API Reference
+
+See [`PURA_API.md`](PURA_API.md) for the full reverse-engineered Pura REST API documentation, including all confirmed endpoint URLs, request/response schemas, field descriptions, and the live state vs. default state distinction.
 
 ---
 

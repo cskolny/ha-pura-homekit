@@ -11,6 +11,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -51,10 +52,13 @@ class PuraCoordinator(DataUpdateCoordinator[dict[str, PuraDevice]]):
         """Fetch latest state from the Pura cloud API."""
         try:
             devices = await self.client.async_get_devices()
-        except RuntimeError as exc:
+        except aiohttp.ClientResponseError as exc:
+            if exc.status == 401:
+                raise ConfigEntryAuthFailed("Pura authentication expired") from exc
+            raise UpdateFailed(f"Error communicating with Pura API: {exc}") from exc
+        except (aiohttp.ClientError, RuntimeError) as exc:
             msg = str(exc)
-            # Surface authentication errors so HA can prompt re-auth
-            if "auth" in msg.lower() or "token" in msg.lower() or "401" in msg:
+            if "auth" in msg.lower() or "token" in msg.lower():
                 raise ConfigEntryAuthFailed(msg) from exc
             raise UpdateFailed(f"Error communicating with Pura API: {msg}") from exc
 
@@ -72,7 +76,16 @@ class PuraCoordinator(DataUpdateCoordinator[dict[str, PuraDevice]]):
         intensity: int,
     ) -> None:
         """Set diffuser intensity across all bays and refresh state."""
-        await self.client.async_set_all_bays_intensity(device_id, intensity)
+        # Pass current bay data so the API client has the controller values
+        bays = None
+        if self.data and device_id in self.data:
+            bays = self.data[device_id].bays
+
+        if intensity == 0:
+            # Use the dedicated stop-all endpoint when turning off
+            await self.client.async_turn_off(device_id)
+        else:
+            await self.client.async_set_all_bays_intensity(device_id, intensity, bays=bays)
         await self._async_request_refresh_after_command(device_id, "intensity", intensity)
 
     async def async_set_nightlight(
@@ -84,8 +97,17 @@ class PuraCoordinator(DataUpdateCoordinator[dict[str, PuraDevice]]):
         color: str | None = None,
     ) -> None:
         """Set nightlight state and refresh."""
+        # Pass current nightlight data so the API client has the controller value
+        nightlight = None
+        if self.data and device_id in self.data:
+            nightlight = self.data[device_id].nightlight
+
         await self.client.async_set_nightlight(
-            device_id, on=on, brightness=brightness, color=color
+            device_id,
+            on=on,
+            brightness=brightness,
+            color=color,
+            nightlight=nightlight,
         )
         await self._async_request_refresh_after_command(device_id, "nightlight_on", on)
 
