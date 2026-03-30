@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from custom_components.pura_homekit.pura_api import (
     PuraBay,
     PuraDevice,
