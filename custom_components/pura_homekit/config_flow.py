@@ -98,7 +98,7 @@ class PuraHomekitConfigFlow(ConfigFlow, domain=DOMAIN):
                 else:
                     errors["base"] = "unknown"
                 _LOGGER.debug("Pura config-flow auth error (type only): %s", type(exc).__name__)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.exception("Unexpected error during Pura authentication in config flow")
                 errors["base"] = "unknown"
 

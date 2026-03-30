@@ -1,12 +1,9 @@
 """Tests for intensity ↔ humidity mapping constants and helper functions."""
 from __future__ import annotations
 
-import pytest
-
 from custom_components.pura_homekit.const import (
     INTENSITY_MEDIUM,
     INTENSITY_OFF,
-    INTENSITY_STEPS,
     INTENSITY_STRONG,
     INTENSITY_SUBTLE,
     INTENSITY_TO_HUMIDITY,

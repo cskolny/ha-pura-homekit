@@ -441,7 +441,7 @@ class PuraApiClient:
     async def async_set_always_on(
         self,
         device_id: str,
-        bay: "PuraBay",
+        bay: PuraBay,
         intensity: int,
     ) -> None:
         """Turn a diffuser on indefinitely using the confirmed pypura two-step sequence.

@@ -7,7 +7,7 @@ DOMAIN = "pura_homekit"
 # Platforms provided by this integration.
 PLATFORMS: list[str] = ["humidifier", "light"]
 
-# ── Pura cloud API – AWS Cognito ───────────────────────────────────────────────
+# ── Pura cloud API - AWS Cognito ───────────────────────────────────────────────
 # These are Pura's public app identifiers — not user credentials.
 # Values decoded from pypura: base64.b64decode(pypura.const.USER_POOL_ID / CLIENT_ID)
 PURA_COGNITO_REGION: str = "us-east-1"

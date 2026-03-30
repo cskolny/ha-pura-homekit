@@ -22,6 +22,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN, PLATFORMS
 from .coordinator import PuraCoordinator
@@ -29,17 +30,7 @@ from .coordinator import PuraCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:  # noqa: ARG001
-    """Global YAML setup hook — UI-only integration; YAML configuration is not supported.
-
-    Args:
-        hass:   The Home Assistant instance.
-        config: The global configuration dictionary (unused).
-
-    Returns:
-        Always ``True``.
-    """
-    return True
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

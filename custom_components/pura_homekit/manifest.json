@@ -1,24 +1,24 @@
 {
   "domain": "pura_homekit",
   "name": "Pura HomeKit Bridge",
-  "version": "1.2.0",
-  "config_flow": true,
-  "documentation": "https://github.com/cskolny/ha-pura-homekit",
-  "issue_tracker": "https://github.com/cskolny/ha-pura-homekit/issues",
-  "dependencies": [
-    "homekit"
-  ],
   "after_dependencies": [],
   "codeowners": [
     "@cskolny"
   ],
-  "requirements": [
-    "pycognito==2024.5.1"
+  "config_flow": true,
+  "dependencies": [
+    "homekit"
   ],
+  "documentation": "https://github.com/cskolny/ha-pura-homekit",
+  "integration_type": "device",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/cskolny/ha-pura-homekit/issues",
   "loggers": [
     "pycognito"
   ],
-  "iot_class": "cloud_polling",
-  "integration_type": "device",
-  "quality_scale": "bronze"
+  "quality_scale": "bronze",
+  "requirements": [
+    "pycognito==2024.5.1"
+  ],
+  "version": "1.2.0"
 }

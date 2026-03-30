@@ -1,14 +1,10 @@
 """Unit tests for the Pura API client data models and response parsing."""
 from __future__ import annotations
 
-import pytest
-
 from custom_components.pura_homekit.pura_api import (
     PuraApiClient,
     PuraBay,
     PuraDevice,
-    PuraFragrance,
-    PuraNightlight,
 )
 
 

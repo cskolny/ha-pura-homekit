@@ -19,8 +19,9 @@ The minimum Pura value is 1 (not 0) when the light is on, so
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
+import homeassistant.util.color as color_util
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_HS_COLOR,
@@ -30,7 +31,6 @@ from homeassistant.components.light import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-import homeassistant.util.color as color_util
 
 from .const import CONF_DEVICE_ID, CONF_DEVICE_NAME, DOMAIN
 from .coordinator import PuraCoordinator
@@ -159,7 +159,7 @@ class PuraNightlightEntity(PuraEntity, LightEntity):
     """
 
     _attr_color_mode = ColorMode.HS
-    _attr_supported_color_modes = {ColorMode.HS}
+    _attr_supported_color_modes: ClassVar[set[ColorMode]] = {ColorMode.HS}
 
     def __init__(
         self,
