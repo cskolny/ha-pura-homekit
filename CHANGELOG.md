@@ -7,75 +7,105 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+---
+
+## [1.2.0] — 2026-03-30
+
+### Fixed
+
+- **Diffuser now turns on correctly from HA / HomeKit** — the root cause was
+  that `POST devices/{id}/intensity` only updates the stored default intensity
+  setting in the Pura cloud; it does not command the physical device to start
+  diffusing.  Confirmed from pypura v2.1.1 source (`pura.py`): the correct
+  turn-on sequence is (1) `POST /intensity` to set the level, then (2)
+  `POST /always-on` with `{"bay": 1}` to actually start the device.
+  All previous attempts (`/timer`, `active: True` on intensity, sending to
+  all bays simultaneously) were confirmed non-functional against the live API.
+
+- **Nightlight 400 Bad Request on turn-on** — the Pura nightlight endpoint
+  requires the `color` field as a bare hex string without the `#` prefix
+  (e.g. `"FFFFFF"` not `"#ffffff"`).  Colours are stored internally with
+  `#` for compatibility with HA colour utilities; the prefix is now stripped
+  before the API payload is sent.
+
+- **Diffuser flickering off immediately after turn-on** — the HA humidifier
+  component emits a spurious `set_humidity(0)` call alongside `turn_on`
+  when `target_humidity` is 0 % (the device is off).  `set_humidity(0)` was
+  calling `stop-all`, which immediately reversed the turn-on command.
+  Fixed with two guards:
+  - `async_set_humidity` now treats `humidity=0` as a no-op (or restores
+    the last-used intensity) when the device is on, rather than turning it
+    off.  Explicit turn-off always goes through `async_turn_off`.
+  - `target_humidity` now floors to 33 % (subtle) whenever `is_on` is
+    `True`, so the HA slider never sits at 0 % while the device is on and
+    the spurious `set_humidity(0)` call is never emitted in the first place.
+
+- **Post-command re-poll was overwriting optimistic state** — after every
+  command, `_optimistic_refresh` was sleeping 1 second then calling
+  `async_request_refresh()`.  The Pura cloud takes several seconds to
+  reflect a command, so the re-poll returned the pre-command state and
+  overwrote the optimistic patch, making the UI flicker back to the old
+  value.  Removed the re-poll entirely; the regular 30-second coordinator
+  poll now confirms state from the cloud once the device has had time to
+  process the command.
+
+### Added
+
+- **Comprehensive API debug logging** — every outbound request now logs its
+  full payload, and every response logs its HTTP status and body.  On 4xx
+  responses, the error body is logged before the exception is raised, making
+  API rejections immediately visible without enabling network tracing.  The
+  `_parse_device` path logs `deviceDefaults.bay` and both bay intensity
+  strings on every poll so live on/off state can be verified at a glance.
+
+### Changed
+
+- **Turn-on path now state-aware** — `async_set_intensity` in the coordinator
+  reads `device.is_on` before issuing a command.  When the device is off it
+  uses the two-step `always-on` sequence.  When the device is already on it
+  updates all bays via `/intensity` to keep oscillation-multi-bay mode in
+  sync, which is unchanged from v1.1.0.
+
+---
+
 ## [1.1.0] — 2026-03-14
 
 ### Fixed
 
 - **Correct Pura REST API endpoint** — replaced the assumed GraphQL URL
-  (`api.pura.com/graphql`) with the real REST base URL (`https://trypura.io/mobile/api/`).
-  The previous URL did not resolve in DNS and prevented all API calls.
-- **Device discovery** — the `GET v2/users/devices` response is a dict keyed by
-  device form-factor (`car`, `mini`, `plus`, `wall`), not a flat list. Parser
-  now flattens all values so devices of every type are discovered. Previously
-  returned zero devices for all accounts.
-- **Correct live on/off state** — devices were incorrectly showing as "on" when
-  they were off. Root cause: the parser was reading `deviceDefaults.bay1Intensity`
-  (the *default intensity setting*) as live intensity. Fixed to use
-  `deviceDefaults.bay` (`0` = off, `1`/`2` = active bay) as the live state
-  indicator, which is confirmed from real device responses.
-- **Correct device name** — name is now read from `displayName.name` (the
-  user-assigned room name) instead of a non-existent top-level `name` field.
-- **Correct nightlight state** — nightlight on/off, brightness, and colour are
-  now read from `deviceDefaults.nightlight` where the live values actually live.
+  (`api.pura.com/graphql`) with the confirmed REST base URL
+  (`https://trypura.io/mobile/api/`). The previous URL did not resolve in DNS
+  and prevented all API calls.
+- **Device discovery** — the `GET v2/users/devices` response is a dict keyed
+  by device form-factor (`car`, `mini`, `plus`, `wall`), not a flat list.
+  Parser now flattens all values so devices of every type are discovered.
+- **Correct live on/off state** — fixed to use `deviceDefaults.bay`
+  (`0` = off, `1`/`2` = active bay slot) as the live state indicator.
+- **Correct device name** — now read from `displayName.name`.
+- **Correct nightlight state** — now read from `deviceDefaults.nightlight`.
 - **Correct fragrance colour** — `placeholderColor` in the API response is a
-  hex string without a `#` prefix (e.g. `"A91D3D"`). Parser now prepends `#`
-  correctly.
-- **Correct bay parsing** — bays are top-level keys `bay1` / `bay2` on the
-  device object, not an array. Both bays are parsed and the fragrance info
-  for each is extracted from the nested `fragrance` object.
-- **`pycognito` replaces broken `warrant` dependency** — `warrant==0.6.1` has
-  an unsolvable dependency conflict (`python-jose-cryptodome` requires two
-  conflicting versions of `pycryptodome`) and could not be installed. Replaced
-  with `pycognito==2024.5.1`, the same library used by pypura, maintained by
-  NabuCasa. `boto3` dependency also removed.
-- **Cognito auth using `Cognito` object directly** — previous implementation
-  incorrectly accessed `.cognito` on a `RequestsSrpAuth` object (attribute does
-  not exist). Rewrote auth to store the `pycognito.Cognito` user object directly
-  and call `check_token()` in an executor for automatic token refresh.
-- **`stop-all` endpoint used for turn-off** — turning a device off now calls
-  `POST devices/{id}/stop-all` (the dedicated endpoint) rather than setting
-  intensity to 0 on each bay individually.
-- **`coordinator.py` passes bay/nightlight data to write calls** — the Pura
-  write endpoints require a `controller` string from the device state. Coordinator
-  now retrieves current bays and nightlight from cached data and passes them
-  through to the API client so write calls include the correct controller value.
-- **`aiohttp.ClientResponseError` (401) caught as `ConfigEntryAuthFailed`** —
-  auth token expiry during polling now triggers HA's re-auth flow correctly
-  instead of being swallowed as a generic `UpdateFailed`.
+  hex string without a `#` prefix; parser now prepends `#` correctly.
+- **Correct bay parsing** — bays are top-level keys `bay1`/`bay2` on the
+  device object, not an array.
+- **`pycognito` replaces broken `warrant` dependency**.
+- **Cognito auth rewritten** — stores the `pycognito.Cognito` user object
+  directly and calls `check_token()` in an executor for automatic refresh.
+- **`stop-all` endpoint used for turn-off**.
+- **Coordinator passes bay/nightlight data to write calls** — ensures the
+  correct `controller` value is included.
+- **`aiohttp.ClientResponseError` (401) raised as `ConfigEntryAuthFailed`**.
 
 ### Added
 
-- **`deploy.sh` `--env` flag** — deploy script now supports two target
-  environments: `production` (container `homeassistant`, port 8123, config
-  `./config`) and `test` (container `homeassistant_test`, port 8124, config
-  `./config_test`). Usage: `./deploy.sh --env test`.
-- **`PURA_API.md`** — comprehensive reverse-engineered API reference covering
-  all confirmed endpoints, full device object schema with field descriptions,
-  intensity scale mapping, live state vs. default state distinction,
-  authentication flow, write call payloads, and WebSocket endpoint.
+- **`deploy.sh` `--env` flag** — supports `production` and `test` targets.
+- **`PURA_API.md`** — comprehensive reverse-engineered API reference.
 
 ### Changed
 
-- **`manifest.json`** — requirements updated from `warrant==0.6.1` + `boto3`
-  to `pycognito==2024.5.1`.
-- **`const.py`** — `PURA_API_URL` corrected from `https://api.pura.com/graphql`
-  to `https://trypura.io/mobile/api/`. Pura Cognito constants (`USER_POOL_ID`,
-  `CLIENT_ID`) are now filled in with their decoded values — no manual
-  extraction step required.
-
-### Technical Notes
-- Confirmed against live responses from three Pura 4 (`wall` type) devices.
-- Full device response schema documented in `PURA_API.md`.
+- **`manifest.json`** — requirements updated to `pycognito==2024.5.1`.
+- **`const.py`** — `PURA_API_URL` corrected; Cognito constants filled in.
 
 ---
 
@@ -83,44 +113,17 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-#### Core Integration
-- Standalone Home Assistant custom integration — **no dependency on ha-pura or any other HACS integration**.
-- Direct Pura cloud API client (`pura_api.py`) using AWS Cognito `USER_SRP_AUTH` authentication with automatic token refresh.
-- `DataUpdateCoordinator` (`coordinator.py`) with 30-second cloud polling and 1-second optimistic state updates after every command.
-
-#### Humidifier Platform
-- Each Pura 4 diffuser exposes as a **Humidifier** accessory in HomeKit via the HA HomeKit Bridge integration.
-- Fan intensity mapped to HomeKit humidity percentage:
-  | Pura Level | HomeKit Humidity % | HA Mode  |
-  |-----------|--------------------| ---------|
-  | Off       | 0 %                | —        |
-  | Subtle    | 33 %               | subtle   |
-  | Medium    | 66 %               | medium   |
-  | Strong    | 100 %              | strong   |
-- Humidity slider snaps to nearest defined intensity step.
-- `turn_on` restores the last-used intensity level (defaults to `subtle` on first use).
-- Full support for `humidifier.set_humidity`, `humidifier.set_mode`, `humidifier.turn_on`, `humidifier.turn_off` HA services.
-
-#### Light Platform
-- Each Pura 4 nightlight exposes as a **Light** accessory in HomeKit.
-- Supports on/off, brightness (HA 0-255 mapped to Pura 1-10 scale), and full RGB colour (HS colour mode).
-- Light entity is skipped automatically on devices that do not have a nightlight.
-
-#### Config Flow
-- Two-step UI config flow: Pura account credentials → device picker.
-- Credential validation at setup time with clear, actionable error messages.
-- Prevents duplicate config entries for the same physical device.
-- One config entry per diffuser.
-
-#### Developer Experience
-- `deploy.sh` — one-command deploy to Raspberry Pi via rsync + SSH.
-- GitHub Actions CI: ruff lint, mypy type-check, hassfest validation on every push/PR.
-- GitHub Actions release: auto-packages `pura_homekit.zip` on version tag push.
-- 46 unit tests covering data models, intensity/humidity mapping, brightness conversion, and RGB colour conversion.
-- Full VSCode workspace configuration.
-- ESPHome migration path: `PuraApiClient` is the only cloud-touching class.
+- Initial release — standalone HA custom integration with direct Pura cloud
+  API access.
+- Humidifier platform: fan intensity mapped to HomeKit humidity percentage.
+- Light platform: nightlight on/off, brightness, and RGB colour.
+- Two-step config flow: credentials → device picker.
+- `DataUpdateCoordinator` with 30-second polling.
+- `deploy.sh` for one-command Raspberry Pi deployment.
 
 ---
 
+[Unreleased]: https://github.com/cskolny/ha-pura-homekit/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/cskolny/ha-pura-homekit/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/cskolny/ha-pura-homekit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/cskolny/ha-pura-homekit/releases/tag/v1.0.0

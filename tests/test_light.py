@@ -1,4 +1,4 @@
-"""Tests for the nightlight brightness and color conversion helpers."""
+"""Tests for the nightlight brightness and colour conversion helpers."""
 from __future__ import annotations
 
 import pytest
@@ -12,60 +12,67 @@ from custom_components.pura_homekit.light import (
 
 
 class TestBrightnessConversion:
-    def test_pura_min_to_ha(self):
+    """Unit tests for Pura ↔ HA brightness scale conversion helpers."""
+
+    def test_pura_minimum_to_ha(self) -> None:
         assert _pura_brightness_to_ha(1) == round(255 / 10)
 
-    def test_pura_max_to_ha(self):
+    def test_pura_maximum_to_ha(self) -> None:
         assert _pura_brightness_to_ha(10) == 255
 
-    def test_ha_max_to_pura(self):
+    def test_ha_maximum_to_pura(self) -> None:
         assert _ha_brightness_to_pura(255) == 10
 
-    def test_ha_zero_to_pura_min(self):
-        """HA brightness 0 should map to Pura minimum 1 (not 0) when turning on."""
+    def test_ha_zero_clamps_to_pura_minimum(self) -> None:
+        """HA brightness 0 must map to Pura minimum 1 (not 0) when the light is on."""
         assert _ha_brightness_to_pura(0) == 1
 
-    def test_pura_clamps_above_10(self):
+    def test_pura_above_10_clamps_to_255(self) -> None:
         assert _pura_brightness_to_ha(15) == 255
 
-    def test_pura_clamps_below_1(self):
+    def test_pura_below_1_clamps_to_minimum(self) -> None:
         assert _pura_brightness_to_ha(0) == round(255 / 10)
 
-    def test_roundtrip_midpoint(self):
-        pura = 5
-        ha = _pura_brightness_to_ha(pura)
-        result = _ha_brightness_to_pura(ha)
-        assert result == pura
+    def test_midpoint_roundtrip(self) -> None:
+        """HA → Pura → HA roundtrip for the midpoint value should be stable."""
+        pura_original = 5
+        ha_value = _pura_brightness_to_ha(pura_original)
+        pura_result = _ha_brightness_to_pura(ha_value)
+        assert pura_result == pura_original
 
 
-class TestColorConversion:
-    def test_white_hex_to_hs(self):
-        hs = _hex_to_hs("#ffffff")
-        assert hs is not None
-        hue, sat = hs
-        assert sat == pytest.approx(0, abs=1)
+class TestColourConversion:
+    """Unit tests for hex ↔ HS colour conversion helpers."""
 
-    def test_red_hex_to_hs(self):
-        hs = _hex_to_hs("#ff0000")
-        assert hs is not None
-        hue, sat = hs
+    def test_white_hex_to_hs_has_zero_saturation(self) -> None:
+        result = _hex_to_hs("#ffffff")
+        assert result is not None
+        _hue, saturation = result
+        assert saturation == pytest.approx(0, abs=1)
+
+    def test_red_hex_to_hs_hue_and_saturation(self) -> None:
+        result = _hex_to_hs("#ff0000")
+        assert result is not None
+        hue, saturation = result
         assert hue == pytest.approx(0, abs=1)
-        assert sat == pytest.approx(100, abs=1)
+        assert saturation == pytest.approx(100, abs=1)
 
-    def test_invalid_hex_returns_none(self):
+    def test_malformed_hex_returns_none(self) -> None:
         assert _hex_to_hs("notacolor") is None
+
+    def test_invalid_hex_digits_returns_none(self) -> None:
         assert _hex_to_hs("#gg0000") is None
 
-    def test_hs_to_hex_white(self):
-        hex_color = _hs_to_hex(0, 0)
-        assert hex_color == "#ffffff"
+    def test_hs_to_hex_white(self) -> None:
+        assert _hs_to_hex(0, 0) == "#ffffff"
 
-    def test_hs_to_hex_roundtrip(self):
+    def test_red_hs_to_hex_roundtrip(self) -> None:
+        """Round-trip #ff0000 → HS → hex should give the same red channel."""
         original_hex = "#ff0000"
         hs = _hex_to_hs(original_hex)
         assert hs is not None
-        result = _hs_to_hex(*hs)
-        # Allow minor rounding differences
-        r1 = int(result[1:3], 16)
-        r2 = int(original_hex[1:3], 16)
-        assert abs(r1 - r2) <= 2
+        result_hex = _hs_to_hex(*hs)
+        original_red = int(original_hex[1:3], 16)
+        result_red = int(result_hex[1:3], 16)
+        # Allow for minor rounding differences introduced by the HS conversion.
+        assert abs(original_red - result_red) <= 2

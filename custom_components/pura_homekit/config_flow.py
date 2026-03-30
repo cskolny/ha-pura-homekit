@@ -1,16 +1,20 @@
-"""
-Config flow for Pura HomeKit.
+"""Config flow for Pura HomeKit.
 
-Steps
-─────
-1. ``user``          – enter Pura email + password
-2. ``select_device`` – pick which diffuser to configure (one entry per device)
+Flow steps
+----------
+1. ``user``          — enter Pura account email + password.
+2. ``select_device`` — pick which diffuser to configure.
 
-One config entry is created per physical diffuser.  The entry stores the
-account credentials (needed for token refresh) as well as the selected
-device_id and device_name so entities can be set up without an extra lookup.
+One config entry is created per physical diffuser so each device has its own
+coordinator, set of entities, and set of HomeKit accessories.  The entry stores
+the account credentials (needed for Cognito token refresh) along with the
+selected ``device_id`` and ``device_name`` so platforms can be set up without
+an extra API lookup.
 
-Security note: credentials are stored encrypted by HA's config entry store.
+Security note
+-------------
+Credentials are stored encrypted by HA's built-in config-entry store.  They
+are never logged, and error messages never expose password values.
 """
 from __future__ import annotations
 
@@ -36,7 +40,11 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PuraHomekitConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Multi-step config flow for Pura HomeKit."""
+    """Multi-step config flow for the Pura HomeKit Bridge integration.
+
+    Step 1 validates Pura account credentials against the live API.
+    Step 2 lets the user pick a diffuser from those discovered on the account.
+    """
 
     VERSION = 1
 
@@ -45,21 +53,32 @@ class PuraHomekitConfigFlow(ConfigFlow, domain=DOMAIN):
         self._password: str = ""
         self._devices: list[PuraDevice] = []
 
-    # ------------------------------------------------------------------
-    # Step 1 – Credentials
-    # ------------------------------------------------------------------
+    # ── Step 1: credentials ───────────────────────────────────────────────────
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Prompt for Pura account email and password."""
+        """Prompt for Pura account email and password.
+
+        Validates credentials immediately by attempting a real Cognito
+        authentication and device list fetch.  Clear, actionable error keys
+        are returned to the UI on failure.
+
+        Args:
+            user_input: Form values submitted by the user, or ``None`` for
+                        the initial render.
+
+        Returns:
+            A :class:`~homeassistant.config_entries.ConfigFlowResult` that
+            either shows the form (with optional errors) or advances to the
+            device-selection step.
+        """
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            email = user_input[CONF_EMAIL].strip().lower()
-            password = user_input[CONF_PASSWORD]
+            email: str = user_input[CONF_EMAIL].strip().lower()
+            password: str = user_input[CONF_PASSWORD]
 
-            # Validate credentials by attempting a real authentication
             client = PuraApiClient(
                 email=email,
                 password=password,
@@ -71,14 +90,16 @@ class PuraHomekitConfigFlow(ConfigFlow, domain=DOMAIN):
             except aiohttp.ClientError:
                 errors["base"] = "cannot_connect"
             except RuntimeError as exc:
-                msg = str(exc).lower()
-                if "password" in msg or "incorrect" in msg or "not authorized" in msg:
+                # Classify common Cognito error messages without leaking the
+                # password value into logs or the UI.
+                message = str(exc).lower()
+                if any(keyword in message for keyword in ("password", "incorrect", "not authorized")):
                     errors["base"] = "invalid_auth"
                 else:
                     errors["base"] = "unknown"
-                _LOGGER.debug("Pura auth error: %s", exc)
+                _LOGGER.debug("Pura config-flow auth error (type only): %s", type(exc).__name__)
             except Exception:  # noqa: BLE001
-                _LOGGER.exception("Unexpected error during Pura authentication")
+                _LOGGER.exception("Unexpected error during Pura authentication in config flow")
                 errors["base"] = "unknown"
 
             if not errors:
@@ -101,32 +122,43 @@ class PuraHomekitConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    # ------------------------------------------------------------------
-    # Step 2 – Device selection
-    # ------------------------------------------------------------------
+    # ── Step 2: device selection ──────────────────────────────────────────────
 
     async def async_step_select_device(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Let the user pick which Pura device to configure."""
+        """Let the user pick which Pura device to configure.
+
+        Builds a dropdown from the devices discovered in step 1 and creates a
+        config entry for the selected device.  Duplicate entries for the same
+        physical device are rejected via :meth:`async_set_unique_id`.
+
+        Args:
+            user_input: Form values submitted by the user, or ``None`` for
+                        the initial render.
+
+        Returns:
+            A :class:`~homeassistant.config_entries.ConfigFlowResult` that
+            either shows the selection form or creates the config entry.
+        """
         errors: dict[str, str] = {}
 
-        # Build a human-readable map for the dropdown
+        # Map device_id → human-readable label for the dropdown.
         device_options: dict[str, str] = {
-            d.device_id: f"{d.name} ({d.model.upper()})"
-            for d in self._devices
+            device.device_id: f"{device.name} ({device.model.upper()})"
+            for device in self._devices
         }
 
         if user_input is not None:
-            device_id = user_input[CONF_DEVICE_ID]
-            device_name_label = device_options.get(device_id, "Pura Diffuser")
-            # Strip the model suffix for the friendly name stored in the entry
-            device_name = next(
-                (d.name for d in self._devices if d.device_id == device_id),
+            device_id: str = user_input[CONF_DEVICE_ID]
+
+            # Use the bare device name (without model suffix) as the entry title.
+            device_name: str = next(
+                (device.name for device in self._devices if device.device_id == device_id),
                 "Pura Diffuser",
             )
 
-            # Prevent duplicate entries for the same physical device
+            # Prevent duplicate config entries for the same physical device.
             await self.async_set_unique_id(f"{DOMAIN}_{device_id}")
             self._abort_if_unique_id_configured()
 

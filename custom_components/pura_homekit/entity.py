@@ -1,4 +1,10 @@
-"""Base entity for Pura HomeKit entities."""
+"""Base entity class for Pura HomeKit entities.
+
+All Pura entity platforms inherit from :class:`PuraEntity`, which handles
+coordinator subscription, ``available`` state, and :class:`DeviceInfo`
+construction.  Platform subclasses only need to implement platform-specific
+state properties and service methods.
+"""
 from __future__ import annotations
 
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -10,11 +16,18 @@ from .pura_api import PuraDevice
 
 
 class PuraEntity(CoordinatorEntity[PuraCoordinator]):
-    """Base class for all Pura HomeKit entities.
+    """Base class shared by all Pura HomeKit entity platforms.
 
-    Subclasses only need to implement the platform-specific properties and
-    service methods; coordinator subscription, availability, and device_info
-    are all handled here.
+    Handles:
+    * Coordinator subscription and update callbacks.
+    * ``available`` property (requires both coordinator data and device online).
+    * :attr:`device_info` construction for the HA device registry.
+
+    Args:
+        coordinator:       The :class:`~.coordinator.PuraCoordinator` instance.
+        device_id:         Unique device identifier used to look up state.
+        unique_id_suffix:  Platform-specific suffix appended to the unique ID
+                           (e.g. ``"humidifier"`` or ``"nightlight"``).
     """
 
     _attr_has_entity_name = True
@@ -29,12 +42,15 @@ class PuraEntity(CoordinatorEntity[PuraCoordinator]):
         self._device_id = device_id
         self._attr_unique_id = f"{DOMAIN}_{device_id}_{unique_id_suffix}"
 
-    # ------------------------------------------------------------------
-    # Device linkage
-    # ------------------------------------------------------------------
+    # ── Device registry linkage ───────────────────────────────────────────────
 
     @property
     def device_info(self) -> DeviceInfo:
+        """Return device registry information for this entity's physical device.
+
+        Groups all entities belonging to the same physical diffuser under a
+        single device entry in the HA device registry.
+        """
         device = self._device
         return DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
@@ -43,24 +59,30 @@ class PuraEntity(CoordinatorEntity[PuraCoordinator]):
             model=device.model.upper() if device else "Pura 4",
         )
 
-    # ------------------------------------------------------------------
-    # Availability
-    # ------------------------------------------------------------------
+    # ── Availability ──────────────────────────────────────────────────────────
 
     @property
     def available(self) -> bool:
+        """Return ``True`` only when the coordinator has data and the device is online.
+
+        A device that is registered but not connected (e.g. power-cycled or
+        out of WiFi range) is reported as unavailable so HA shows the correct
+        state in the UI and in HomeKit.
+        """
         if not super().available:
             return False
         device = self._device
         return device is not None and device.connected
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     @property
     def _device(self) -> PuraDevice | None:
-        """Return the current PuraDevice from coordinator data."""
+        """Return the current :class:`~.pura_api.PuraDevice` from coordinator data.
+
+        Returns ``None`` when the coordinator has not yet completed its first
+        refresh or when the device is not found in the response.
+        """
         if self.coordinator.data is None:
             return None
         return self.coordinator.data.get(self._device_id)

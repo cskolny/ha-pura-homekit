@@ -1,4 +1,4 @@
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
@@ -9,23 +9,31 @@ build/
 *.whl
 *.zip
 
-# Virtual environments
+# ── Virtual environments ──────────────────────────────────────────────────────
 .venv/
 venv/
 env/
 
-# Tooling caches
+# ── Tooling caches ────────────────────────────────────────────────────────────
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 
-# Home Assistant dev artefacts
+# ── Home Assistant dev artefacts ──────────────────────────────────────────────
 config/
+config_test/
 .devcontainer/
 
-# IDE
+# ── IDE & OS ──────────────────────────────────────────────────────────────────
 .idea/
+.continue/
+.vscode/
 *.swp
-deploy.sh
 .DS_Store
 Thumbs.db
+
+# ── Deployment script (contains Pi hostnames; not needed in the published repo)
+deploy.sh

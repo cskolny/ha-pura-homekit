@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    name: Package & Publish Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp manifest.json with release version
+        run: |
+          python3 -c "
+          import json
+          with open('custom_components/pura_homekit/manifest.json', 'r') as f:
+              manifest = json.load(f)
+          manifest['version'] = '${{ steps.version.outputs.version }}'
+          with open('custom_components/pura_homekit/manifest.json', 'w') as f:
+              json.dump(manifest, f, indent=2)
+              f.write('\n')
+          "
+
+      - name: Build release zip
+        run: |
+          cd custom_components
+          zip -r ../pura_homekit.zip pura_homekit/ \
+            --exclude "**/__pycache__/*" \
+            --exclude "**/*.pyc"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pura_homekit.zip
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}
