@@ -9,10 +9,11 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["ARG"]  # pytest fixtures intentionally have unused args
+"tests/*" = ["ARG", "I001"]  # pytest fixtures intentionally have unused args; import order managed manually
 
 [tool.ruff.lint.isort]
 known-first-party = ["custom_components", "homeassistant"]
+known-third-party = ["aiohttp", "voluptuous", "pytest", "pycognito"]
 
 [tool.mypy]
 python_version = "3.12"
