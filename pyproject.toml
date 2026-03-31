@@ -18,9 +18,18 @@ known-third-party = ["aiohttp", "voluptuous", "pytest", "pycognito"]
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
-warn_return_any = true
 warn_unused_configs = true
 strict = true
+# The following rules produce false positives when mypy cannot see
+# Home Assistant's type stubs (ignore_missing_imports=true causes HA
+# base classes and return values to be typed as Any).  Disabling them
+# here is the standard approach for HA custom integrations.
+disable_error_code = [
+    "misc",          # "Class cannot subclass value of type Any" (HA base classes)
+    "no-any-return", # "Returning Any" from HA-typed functions/dict lookups
+    "call-arg",      # "Unexpected keyword argument 'domain'" (ConfigFlow metaclass)
+    "unused-ignore", # "Unused type: ignore" (redundant with ignore_missing_imports)
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

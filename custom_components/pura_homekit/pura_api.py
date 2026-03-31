@@ -219,7 +219,7 @@ class _CognitoAuth:
         Must be called from an executor thread -- never directly from the
         asyncio event loop.
         """
-        from pycognito import Cognito  # type: ignore[import]
+        from pycognito import Cognito
 
         user = Cognito(
             user_pool_id=PURA_USER_POOL_ID,
